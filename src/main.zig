@@ -28,19 +28,19 @@ fn findIndexOfNull(str: []const i8) usize {
     return len;
 }
 
-fn getSecretUUID(buf: []u8) void {
+fn getSecretUUID(buf: []u8) bool {
     const RSMB = comptime strToU32("RSMB");
     const defaultUUID = "yyyy yyyy}\x00";
     var sizeOfBuffer = GetSystemFirmwareTable(RSMB, 0, 0, 0);
     if (sizeOfBuffer == 0) {
         @memcpy(buf.ptr, defaultUUID);
-        return;
+        return false;
     }
     var buffer: [4096]i8 = undefined;
     const bytesWritten = GetSystemFirmwareTable(RSMB, 0, @intFromPtr(&buffer), sizeOfBuffer);
     if (bytesWritten == 0) {
         @memcpy(buf.ptr, defaultUUID);
-        return;
+        return false;
     }
     var i: usize = 0;
     while (buffer[i + 8] != 1) {
@@ -60,11 +60,11 @@ fn getSecretUUID(buf: []u8) void {
                 continue;
         }
         @memcpy(buf.ptr, defaultUUID);
-        return;
+        return false;
     }
     if (i == 0) {
         @memcpy(buf.ptr, defaultUUID);
-        return;
+        return false;
     }
     const v11 = i + 8;
     const v12 = @as([*]u8, @ptrCast(&buffer[v11 + 16]));
@@ -81,6 +81,7 @@ fn getSecretUUID(buf: []u8) void {
     _ = std.fmt.bufPrint(buf[29..], "{x:0>2}", .{v12[6]}) catch unreachable;
     _ = std.fmt.bufPrint(buf[31..], "{x:0>2}", .{v12[5]}) catch unreachable;
     _ = std.fmt.bufPrint(buf[33..], "{x:0>2}", .{v12[4]}) catch unreachable;
+    return true;
 }
 
 const HKEY_CURRENT_USER: win.HKEY = @ptrFromInt(0x80000001);
@@ -92,15 +93,16 @@ pub export fn wWinMainCRTStartup() callconv(.C) usize {
     const prefix = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\CLSID\\{";
     @memcpy(path.ptr, prefix);
     var UUID = path[prefix.len..];
-    getSecretUUID(UUID);
-    UUID[8] = '-';
-    UUID[13] = '-';
-    UUID[17] = '1';
-    UUID[18] = '-';
-    UUID[23] = '-';
-    UUID[26] = '9';
-    UUID[35] = '}';
-    UUID[36] = 0;
+    if (getSecretUUID(UUID)) {
+        UUID[8] = '-';
+        UUID[13] = '-';
+        UUID[17] = '1';
+        UUID[18] = '-';
+        UUID[23] = '-';
+        UUID[26] = '9';
+        UUID[35] = '}';
+        UUID[36] = 0;
+    }
     _ = RegDeleteKeyA(HKEY_CURRENT_USER, @ptrCast(path.ptr));
     var key: win.HKEY = undefined;
     _ = RegCreateKeyA(HKEY_CURRENT_USER, @ptrCast(path.ptr), &key);
