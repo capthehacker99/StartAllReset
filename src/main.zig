@@ -3,44 +3,12 @@ const win = std.os.windows;
 const DWORD = win.DWORD;
 const UINT = win.UINT;
 
-const Address = struct {
-    address: ?*anyopaque,
-    const Self = @This();
-    pub fn of(addressLike: anytype) Self {
-        var realAddress: ?*anyopaque = undefined;
-        switch (@typeInfo(@TypeOf(addressLike))) {
-            .Int, .ComptimeInt => {
-                realAddress = @ptrFromInt(addressLike);
-            },
-            .Pointer => |ptr| {
-                if (ptr.size == .Slice) {
-                    realAddress = @ptrFromInt(@intFromPtr(addressLike.ptr));
-                } else {
-                    realAddress = @ptrFromInt(@intFromPtr(addressLike));
-                }
-            },
-            else => unreachable,
-        }
-        return Self{
-            .address = realAddress,
-        };
-    }
-    fn toInt(this: Self) usize {
-        return @intFromPtr(this.address);
-    }
-    fn toPtrOf(this: Self, comptime ptrType: type) ptrType {
-        if (@typeInfo(ptrType) != .Pointer)
-            @compileError("Only pointer type is accepted in `Address.toPtrOf()`");
-        return @alignCast(@ptrCast(this.address));
-    }
-};
-
+//WINAPIS
 extern fn GetSystemFirmwareTable(FirmwareTableProviderSignature: DWORD, FirmwareTableID: DWORD, pFirmwareTableBuffer: usize, BufferSize: DWORD) callconv(win.WINAPI) UINT;
-
 extern fn RegDeleteKeyA(hKey: win.HKEY, lpSubKey: win.LPCSTR) callconv(win.WINAPI) win.LSTATUS;
-
 extern fn RegCreateKeyA(hKey: win.HKEY, lpSubKey: win.LPCSTR, phkResult: *win.HKEY) callconv(win.WINAPI) win.LSTATUS;
 extern fn RegCloseKey(hKey: win.HKEY) callconv(win.WINAPI) win.LSTATUS;
+
 fn strToU32(str: []const u8) u32 {
     var result: u32 = 0;
     for (str) |val| {
@@ -60,13 +28,6 @@ fn findIndexOfNull(str: []const i8) usize {
     return len;
 }
 
-fn HIWORD32(dword: u32) u16 {
-    return @truncate(dword >> 16);
-}
-fn HIWORD64(dword: u64) u16 {
-    return @truncate(dword >> 48);
-}
-
 fn getSecretUUID(buf: []u8) void {
     const RSMB = comptime strToU32("RSMB");
     const defaultUUID = "yyyy yyyy}\x00";
@@ -76,7 +37,7 @@ fn getSecretUUID(buf: []u8) void {
         return;
     }
     var buffer: [4096]i8 = undefined;
-    const bytesWritten = GetSystemFirmwareTable(RSMB, 0, Address.of(&buffer).toInt(), sizeOfBuffer);
+    const bytesWritten = GetSystemFirmwareTable(RSMB, 0, @intFromPtr(&buffer), sizeOfBuffer);
     if (bytesWritten == 0) {
         @memcpy(buf.ptr, defaultUUID);
         return;
@@ -120,23 +81,9 @@ fn getSecretUUID(buf: []u8) void {
     _ = std.fmt.bufPrint(buf[29..], "{x:0>2}", .{v12[6]}) catch unreachable;
     _ = std.fmt.bufPrint(buf[31..], "{x:0>2}", .{v12[5]}) catch unreachable;
     _ = std.fmt.bufPrint(buf[33..], "{x:0>2}", .{v12[4]}) catch unreachable;
-    // _ = std.fmt.bufPrint(buf, "{x:0>8}-{x:0>4}{x:0>4}-{x:0>2}{x:0>2}{x:0>2}{x:0>2}-{x:0>2}{x:0>2}{x:0>2}{x:0>2}", .{
-    //     firstPart[0],
-    //     secPart[1],
-    //     secPart[0],
-    //     v12[3],
-    //     v12[2],
-    //     v12[1],
-    //     v12[0],
-    //     v12[7],
-    //     v12[6],
-    //     v12[5],
-    //     v12[4],
-    //     //
-    // }) catch unreachable;
 }
 
-const HKEY_CURRENT_USER = Address.of(0x80000001).toPtrOf(win.HKEY);
+const HKEY_CURRENT_USER: win.HKEY = @ptrFromInt(0x80000001);
 
 pub export fn wWinMainCRTStartup() callconv(.C) usize {
     @setAlignStack(16);
@@ -154,7 +101,6 @@ pub export fn wWinMainCRTStartup() callconv(.C) usize {
     UUID[26] = '9';
     UUID[35] = '}';
     UUID[36] = 0;
-    //std.debug.print("{s}", .{path});
     _ = RegDeleteKeyA(HKEY_CURRENT_USER, @ptrCast(path.ptr));
     var key: win.HKEY = undefined;
     _ = RegCreateKeyA(HKEY_CURRENT_USER, @ptrCast(path.ptr), &key);
