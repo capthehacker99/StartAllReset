@@ -3,11 +3,11 @@ const win = std.os.windows;
 const DWORD = win.DWORD;
 const UINT = win.UINT;
 
-//WINAPIS
-extern fn GetSystemFirmwareTable(FirmwareTableProviderSignature: DWORD, FirmwareTableID: DWORD, pFirmwareTableBuffer: usize, BufferSize: DWORD) callconv(win.WINAPI) UINT;
-extern fn RegDeleteKeyA(hKey: win.HKEY, lpSubKey: win.LPCSTR) callconv(win.WINAPI) win.LSTATUS;
-extern fn RegCreateKeyA(hKey: win.HKEY, lpSubKey: win.LPCSTR, phkResult: *win.HKEY) callconv(win.WINAPI) win.LSTATUS;
-extern fn RegCloseKey(hKey: win.HKEY) callconv(win.WINAPI) win.LSTATUS;
+// WINAPIS
+extern "kernel32" fn GetSystemFirmwareTable(FirmwareTableProviderSignature: DWORD, FirmwareTableID: DWORD, pFirmwareTableBuffer: usize, BufferSize: DWORD) callconv(win.WINAPI) UINT;
+extern "advapi32" fn RegDeleteKeyA(hKey: win.HKEY, lpSubKey: win.LPCSTR) callconv(win.WINAPI) win.LSTATUS;
+extern "advapi32" fn RegCreateKeyA(hKey: win.HKEY, lpSubKey: win.LPCSTR, phkResult: *win.HKEY) callconv(win.WINAPI) win.LSTATUS;
+extern "advapi32" fn RegCloseKey(hKey: win.HKEY) callconv(win.WINAPI) win.LSTATUS;
 
 fn strToU32(str: []const u8) u32 {
     var result: u32 = 0;
@@ -31,7 +31,7 @@ fn findIndexOfNull(str: []const i8) usize {
 fn getSecretUUID(buf: []u8) bool {
     const RSMB = comptime strToU32("RSMB");
     const defaultUUID = "yyyy yyyy}\x00";
-    var sizeOfBuffer = GetSystemFirmwareTable(RSMB, 0, 0, 0);
+    const sizeOfBuffer = GetSystemFirmwareTable(RSMB, 0, 0, 0);
     if (sizeOfBuffer == 0) {
         @memcpy(buf.ptr, defaultUUID);
         return false;
@@ -86,8 +86,7 @@ fn getSecretUUID(buf: []u8) bool {
 
 const HKEY_CURRENT_USER: win.HKEY = @ptrFromInt(0x80000001);
 
-pub export fn wWinMainCRTStartup() callconv(.C) usize {
-    @setAlignStack(16);
+pub export fn wWinMainCRTStartup() callconv(.withStackAlign(.c, 1)) usize {
     var buffer: [1024]u8 = undefined;
     var path = &buffer;
     const prefix = "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\CLSID\\{";
@@ -107,5 +106,5 @@ pub export fn wWinMainCRTStartup() callconv(.C) usize {
     var key: win.HKEY = undefined;
     _ = RegCreateKeyA(HKEY_CURRENT_USER, @ptrCast(path.ptr), &key);
     _ = RegCloseKey(key);
-    return undefined;
+    return 0;
 }
